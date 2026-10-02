@@ -67,7 +67,8 @@ def _split_quotes(paragraph: str) -> list[tuple[str, SegmentType]]:
         before = paragraph[pos : m.start()].strip(" ,—–-")
         if before:
             result.append((before, SegmentType.NARRATION))
-        result.append((quoted, SegmentType.DIALOGUE))
+        # «Вздор, – сказал он, – и только!»: author's words inside the quotes are narration
+        result.extend(_split_dash_dialogue(quoted))
         pos = m.end()
     tail = paragraph[pos:].strip(" ,—–-") if result else paragraph
     if tail:

@@ -79,3 +79,14 @@ def test_chunking_keeps_paragraphs_and_dialogue_runs() -> None:
         chunks[1].context
         == paragraphs[chunks[1].spans[0].paragraph - 2 : chunks[1].spans[0].paragraph]
     )
+
+
+def test_author_words_inside_quotes_are_narration() -> None:
+    parts = split_paragraph(
+        "«Все это вздор, – сказал он с надеждой, – и нечем тут было смущаться!»"
+    )
+    assert parts == [
+        ("Все это вздор,", D),
+        ("сказал он с надеждой,", N),
+        ("и нечем тут было смущаться!", D),
+    ]

@@ -66,6 +66,7 @@ class CharacterObservation(BaseModel):
 class SpanLabel(BaseModel):
     id: int
     type: SegmentType
+    cue: str = Field(default="", description="Text evidence the LLM used for the speaker.")
     speaker: str = "narrator"
     emotion: Emotion = Emotion.NEUTRAL
 
@@ -84,6 +85,11 @@ class SpanLabel(BaseModel):
     def _emotion(cls, v: object) -> Emotion:
         return normalize_emotion(v)
 
+    @field_validator("cue", mode="before")
+    @classmethod
+    def _cue(cls, v: object) -> str:
+        return str(v or "")[:200]
+
     @field_validator("speaker", mode="before")
     @classmethod
     def _speaker(cls, v: object) -> str:
@@ -101,6 +107,7 @@ class SpanInput:
     id: int
     hint: str
     text: str
+    paragraph: int = 0
 
 
 @dataclass(frozen=True)
@@ -153,10 +160,12 @@ CHUNK_ANALYSIS_JSON_SCHEMA: dict = {
                 "properties": {
                     "id": {"type": "integer"},
                     "type": {"type": "string", "enum": [t.value for t in SegmentType]},
+                    # generated before "speaker": the model quotes its evidence first
+                    "cue": {"type": "string"},
                     "speaker": {"type": "string"},
                     "emotion": {"type": "string", "enum": [e.value for e in Emotion]},
                 },
-                "required": ["id", "type", "speaker", "emotion"],
+                "required": ["id", "type", "cue", "speaker", "emotion"],
             },
         },
     },

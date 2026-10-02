@@ -81,7 +81,7 @@ def test_parse_drops_unknown_and_duplicate_ids() -> None:
 
 def test_prompt_contains_spans_and_known_characters() -> None:
     text = build_user_prompt(REQUEST)
-    assert '"text": "Привет!"' in text
+    assert "[0:narration] Анна вошла. [1:dialogue] Привет!" in text
     assert "KNOWN CHARACTERS: none yet" in text
 
 

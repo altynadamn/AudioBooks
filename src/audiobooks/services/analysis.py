@@ -27,10 +27,11 @@ from audiobooks.models.script import (
 )
 from audiobooks.services.context import AppContext
 from audiobooks.storage.layout import BookLayout
+from audiobooks.text.attribution import apply_speech_tags
 from audiobooks.text.chunker import Chunk, chunk_spans
 from audiobooks.text.segmenter import Span, segment_paragraphs
 from audiobooks.utils import read_json, sha256_text, write_json
-from audiobooks.voices.registry import CharacterRegistry
+from audiobooks.voices.registry import CharacterRegistry, ground_name
 
 log = logging.getLogger(__name__)
 
@@ -174,7 +175,10 @@ class AnalysisService:
             book_title=book.title,
             chapter_title=chapter.title,
             language=book.language,
-            spans=[SpanInput(id=s.index, hint=s.hint.value, text=s.text) for s in chunk.spans],
+            spans=[
+                SpanInput(id=s.index, hint=s.hint.value, text=s.text, paragraph=s.paragraph)
+                for s in chunk.spans
+            ],
             context=chunk.context,
             known_characters=registry.known_characters(),
             recent_speakers=list(recent),
@@ -192,7 +196,9 @@ class AnalysisService:
         chunk: Chunk, analysis: ChunkAnalysis, registry: CharacterRegistry, chapter: int
     ) -> list[AudiobookSegment]:
         chunk_ids: dict[str, str] = {}
+        source_text = " ".join(s.text for s in chunk.spans) + " " + " ".join(chunk.context)
         for obs in analysis.characters:
+            obs.name, obs.aliases = ground_name(obs.name, obs.aliases, source_text)
             canonical = registry.observe(obs, chapter)
             chunk_ids[obs.id] = canonical
         labels = {label.id: label for label in analysis.segments}
@@ -224,6 +230,9 @@ class AnalysisService:
                 "chapter %d chunk %d: %d span(s) unlabeled by the LLM; used heuristics",
                 chapter, chunk.index, missing,
             )  # fmt: skip
+        hints = {s.index: s.hint for s in chunk.spans}
+        for idx, old, new in apply_speech_tags(segments, registry, hints):
+            log.debug("span %d: speech tag names %s (LLM said %s)", idx, new, old)
         return segments
 
 

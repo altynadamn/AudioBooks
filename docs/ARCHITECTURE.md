@@ -85,6 +85,36 @@ the model. A label referring to an unknown span id is dropped; spans the LLM for
 (≤20 %) fall back to the heuristic label; a response that misses more is rejected and
 retried.
 
+### Speaker attribution
+
+Who speaks is decided in three layers:
+
+1. **Prompt** (`llm/prompts.py`): the passage is shown one paragraph per line with its
+   author's words, plus explicit rules – the speech tag in the same paragraph decides,
+   descriptions ("молодой человек", "старушка") map to known characters, untagged
+   exchanges alternate, a name inside a line is usually the addressee, thoughts belong to
+   the thinker, bystanders are separate minor characters.
+2. **Evidence first**: the JSON schema puts a `cue` field before `speaker`, so the model
+   has to quote the words that identify the speaker before naming them (cheap
+   chain-of-thought under grammar-constrained decoding).
+3. **Deterministic tag override** (`text/attribution.py`): in "— line, — tag." paragraphs,
+   if the first words of the author's remark contain a speech/thought verb and exactly one
+   known character's name or alias in the stored (nominative) form, that character is the
+   speaker of every line in the paragraph. Inflected forms ("сказал он Ивану") do not
+   match, so addressees are not mistaken for speakers.
+
+Measured on hand-labelled chapters of *Crime and Punishment* with Ornith 9B (IQ4_XS):
+the first prompt reached 76 % on chapter 1; the current pipeline gets 34/34 on chapter 1
+and 57/58 on chapter 2, which was not used while writing the rules (the remaining miss
+is a line Marmeladov quotes from someone else). Analysis is ~25 % slower than before
+because of the `cue` field.
+
+Character names are cleaned too: names that mix Cyrillic and Latin ("Родion") are
+repaired from words of the source text, and a full name merges with an entry that holds
+only part of it ("Раскольников" ⊂ "Родион Романович Раскольников"). A reused id whose
+proper name shares no word with the known character is *not* merged (ids are slugs
+invented by the model and can collide).
+
 ## LLM responsibilities and validation
 
 `OpenAICompatibleProvider.analyze_chunk`:

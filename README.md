@@ -445,9 +445,11 @@ More in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
   speakers. Better casts need more legally obtained reference recordings.
 * **Emotion** is detected and stored but barely influences cloned voices (Qwen3-TTS Base
   has no style instruction input).
-* **Attribution quality** depends on the LLM. Ornith handles explicit speech tags well;
-  long untagged exchanges can still produce `unknown` or wrong speakers. Chunks are
-  analyzed sequentially; there is no second pass to reconcile the whole book.
+* **Attribution quality** depends on the LLM and the book. On two hand-labelled chapters
+  of *Crime and Punishment* the current pipeline attributes 91 of 92 lines correctly (see
+  `docs/ARCHITECTURE.md`), but long untagged exchanges and quoted speech inside a
+  monologue can still go wrong. Chunks are analyzed sequentially; there is no second pass
+  to reconcile the whole book.
 * **Dialogue detection** is typographic: books that mark dialogue unusually (e.g. no dashes
   or quotes) rely entirely on the LLM correcting the hints.
 * **Scanned PDFs / images:** OCR via Ornith + mmproj is implemented as an interface but not

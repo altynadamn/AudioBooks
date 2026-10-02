@@ -44,7 +44,9 @@ def test_same_as_merges_and_adds_alias() -> None:
     reg.observe(obs(id="anna", name="Анна", gender="female"), 1)
     cid = reg.observe(obs(id="a_s", name="Анна Сергеевна", same_as="anna"), 3)
     assert cid == "anna"
-    assert "Анна Сергеевна" in reg.get("anna").aliases
+    # the fuller name becomes canonical, the short one stays as an alias
+    assert reg.get("anna").name == "Анна Сергеевна"
+    assert "Анна" in reg.get("anna").aliases
 
 
 def test_uncertain_character_is_not_merged() -> None:

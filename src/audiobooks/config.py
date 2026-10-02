@@ -26,8 +26,8 @@ class Settings(BaseSettings):
     llama_model: str = "ornith"
     llama_api_key: str = ""
     llama_timeout: float = 600.0
-    llama_temperature: float = 0.2
-    llama_max_tokens: int = 4096
+    llama_temperature: float = 0.0  # deterministic labels
+    llama_max_tokens: int = 8192
     llama_json_schema: bool = Field(
         default=True, description="Send response_format=json_schema (grammar-constrained output)."
     )
