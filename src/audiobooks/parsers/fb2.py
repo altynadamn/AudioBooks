@@ -47,7 +47,8 @@ class Fb2Parser(BookParser):
 
         chapters: list[ParsedChapter] = []
         for body in main:
-            self._collect(body, [], chapters)
+            # the body <title> repeats author/book title: not part of chapter titles
+            self._collect(body, [], chapters, use_title=False)
         return self.finalize(
             path=path, title=title, author=author, language=lang, chapters=chapters
         )
@@ -88,7 +89,12 @@ class Fb2Parser(BookParser):
         return title, author, lang
 
     def _collect(
-        self, section: etree._Element, parents: list[str], out: list[ParsedChapter]
+        self,
+        section: etree._Element,
+        parents: list[str],
+        out: list[ParsedChapter],
+        *,
+        use_title: bool = True,
     ) -> None:
         """Leaf sections become chapters; parent titles are prefixed ("Часть 1. Глава 2")."""
         title = ""
@@ -108,7 +114,7 @@ class Fb2Parser(BookParser):
                     t for el in child.iter() if _local(el.tag) in _TEXT_TAGS if (t := _text(el))
                 )
 
-        path = [*parents, title] if title else parents
+        path = [*parents, title] if title and use_title else parents
         if subsections:
             if paragraphs:  # text before the first subsection (e.g. a part's intro)
                 out.append(self._make(out, path, paragraphs))
@@ -121,4 +127,4 @@ class Fb2Parser(BookParser):
     def _make(out: list[ParsedChapter], path: list[str], paragraphs: list[str]) -> ParsedChapter:
         index = len(out) + 1
         title = ". ".join(p.rstrip(".") for p in path[-2:]) if path else f"Chapter {index}"
-        return ParsedChapter(index=index, title=title, paragraphs=paragraphs)
+        return ParsedChapter(index=index, title=title, paragraphs=paragraphs, has_title=bool(path))

@@ -55,6 +55,7 @@ class EpubParser(BookParser):
                         index=len(chapters) + 1,
                         title=sec_title or f"Chapter {len(chapters) + 1}",
                         paragraphs=paragraphs,
+                        has_title=bool(sec_title),
                     )
                 )
         if not chapters:

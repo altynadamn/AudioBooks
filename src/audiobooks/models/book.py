@@ -13,6 +13,9 @@ class ParsedChapter(BaseModel):
     index: int = Field(ge=1)
     title: str
     paragraphs: list[str]
+    has_title: bool = Field(
+        default=True, description="False when the title was generated (e.g. 'Chapter 3')."
+    )
 
     @property
     def char_count(self) -> int:

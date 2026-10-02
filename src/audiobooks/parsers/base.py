@@ -9,13 +9,18 @@ from pathlib import Path
 
 from audiobooks.models.book import ParsedBook, ParsedChapter
 
-# "Глава 1", "ГЛАВА ПЕРВАЯ", "Chapter IV", "Часть 2. Название", "Пролог", "Epilogue", "XII"
+# "Глава 1", "ГЛАВА ПЕРВАЯ", "Chapter IV. The Storm", "Часть 2: Название", "Пролог", "XII"
+_NUMBER = r"""(?:\d{1,3}|[ivxlcdm]{1,7}
+    |[а-яё]+(?:ая|ой|ый|ий|ья|ье|ое|ть|ать|цать)
+    |one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|[a-z]+teen|twenty
+    |first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|[a-z]+th)"""
 _HEADING_RE = re.compile(
-    r"""^\s*(
-        (глава|часть|книга|chapter|part|book)\s+([0-9]+|[ivxlcdm]+|[а-яё]+|[a-z]+)\b.{0,80}
-      | (пролог|эпилог|предисловие|послесловие|prologue|epilogue|preface|afterword)\b.{0,60}
-      | [ivxlcdm]{1,7}\.?
-      | \d{1,3}\.?
+    rf"""^\s*(
+        (?:глава|часть|книга|chapter|part|book)\s+{_NUMBER}\.?(?:\s*[.:—–-]\s*.{{1,80}})?
+      | (?:пролог|эпилог|предисловие|послесловие|prologue|epilogue|preface|afterword)
+        (?:\s*[.:—–-]\s*.{{1,60}})?
+      | [ivxlcdm]{{1,7}}\.?
+      | \d{{1,3}}\.?
     )\s*$""",
     re.IGNORECASE | re.VERBOSE,
 )
@@ -85,7 +90,12 @@ def split_by_size(
 
 
 def _chapter(index: int, title: str, body: list[str], default_title: str) -> ParsedChapter:
-    return ParsedChapter(index=index, title=title or f"{default_title} {index}", paragraphs=body)
+    return ParsedChapter(
+        index=index,
+        title=title or f"{default_title} {index}",
+        paragraphs=body,
+        has_title=bool(title),
+    )
 
 
 def renumber(chapters: list[ParsedChapter]) -> list[ParsedChapter]:
@@ -94,7 +104,7 @@ def renumber(chapters: list[ParsedChapter]) -> list[ParsedChapter]:
     for ch in chapters:
         paras = [p for p in (clean_paragraph(x) for x in ch.paragraphs) if p]
         if paras:
-            result.append(ParsedChapter(index=len(result) + 1, title=ch.title, paragraphs=paras))
+            result.append(ch.model_copy(update={"index": len(result) + 1, "paragraphs": paras}))
     return result
 
 
