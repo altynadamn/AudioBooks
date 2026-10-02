@@ -124,9 +124,7 @@ class Database:
 
     def find_book_by_hash(self, sha256: str) -> Book | None:
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM books WHERE source_sha256 = ?", (sha256,)
-            ).fetchone()
+            row = conn.execute("SELECT * FROM books WHERE source_sha256 = ?", (sha256,)).fetchone()
         return Book(**dict(row)) if row else None
 
     def list_books(self) -> list[Book]:
@@ -202,9 +200,7 @@ class Database:
         fields["updated_at"] = _now().isoformat()
         assignments = ", ".join(f"{name} = ?" for name in fields)
         with self._connect() as conn:
-            conn.execute(
-                f"UPDATE jobs SET {assignments} WHERE id = ?", (*fields.values(), job_id)
-            )
+            conn.execute(f"UPDATE jobs SET {assignments} WHERE id = ?", (*fields.values(), job_id))
 
     def get_job(self, job_id: str) -> ProcessingJob:
         with self._connect() as conn:
