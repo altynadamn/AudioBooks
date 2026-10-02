@@ -175,3 +175,82 @@ def test_pdf_text_layer(tmp_path: Path) -> None:
 def test_unsupported_extension(tmp_path: Path) -> None:
     with pytest.raises(UnsupportedFormatError):
         get_parser(tmp_path / "book.docx")
+
+
+CYRILLIC_FONTS = [
+    Path("C:/Windows/Fonts/arial.ttf"),
+    Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+    Path("/Library/Fonts/Arial Unicode.ttf"),
+]
+
+
+def _book_pdf(path: Path, font: Path) -> None:
+    """3 pages with a running header/footer, page numbers, wrapped lines and dialogue."""
+    import pymupdf
+
+    doc = pymupdf.open()
+    body = [
+        [
+            ("ЧАСТЬ 1", 14),
+            ("1", 13),
+            ("В начале июля молодой человек вышел из своей каморки и", 12),
+            ("медленно, как бы в нерешимости, отправился к мосту. Кого-", 12),
+            ("нибудь он встретить не хотел.", 12),
+            ("– Ты пришёл? – спросила она.", 12),
+        ],
+        [
+            ("– Пришёл, – ответил он и сел у окна, глядя на падающий снег за стек-", 12),
+            ("лом.", 12),
+            ("2", 13),
+            ("Утром снег перестал, и город стал тихим.", 12),
+        ],
+        [("ЧАСТЬ 2", 14), ("1", 13), ("Прошла неделя, и всё повторилось снова.", 12)],
+    ]
+    for n, lines in enumerate(body, start=1):
+        page = doc.new_page()
+        kw = {"fontname": "cyr", "fontfile": str(font)}
+        page.insert_text((65, 40), "Автор: «Книга»", fontsize=10, **kw)
+        page.insert_text((540, 40), str(n), fontsize=10, **kw)
+        page.insert_text((65, 800), "100 лучших книг: www.example.ru", fontsize=10, **kw)
+        y = 100
+        for text, size in lines:
+            page.insert_text((65, y), text, fontsize=size, **kw)
+            y += size + 8
+    doc.save(path)
+    doc.close()
+
+
+def test_pdf_rebuilds_paragraphs_and_strips_running_headers(tmp_path: Path) -> None:
+    font = next((f for f in CYRILLIC_FONTS if f.is_file()), None)
+    if font is None:
+        pytest.skip("no Cyrillic TTF font available to build the test PDF")
+    path = tmp_path / "book.pdf"
+    _book_pdf(path, font)
+    book = get_parser(path).parse(path)
+    titles = [c.title for c in book.chapters]
+    assert titles == ["ЧАСТЬ 1. Глава 1", "ЧАСТЬ 1. Глава 2", "ЧАСТЬ 2. Глава 1"]
+    text = [p for c in book.chapters for p in c.paragraphs]
+    assert not any("example.ru" in p or "«Книга»" in p for p in text)
+    first = book.chapters[0].paragraphs
+    # wrapped lines joined, line-end hyphen of "Кого-нибудь" kept
+    assert first[0].startswith("В начале июля молодой человек вышел из своей каморки и медленно")
+    assert "Кого-нибудь он встретить не хотел." in first[0]
+    # each dialogue line is its own paragraph; a word split across pages is re-joined
+    assert first[1] == "– Ты пришёл? – спросила она."
+    assert first[2].endswith("падающий снег за стеклом.")
+
+
+def test_outdated_parse_is_refreshed(ctx, sample_txt: Path) -> None:
+    from audiobooks.services.books import BookService
+    from audiobooks.utils import read_json, write_json
+
+    service = BookService(ctx)
+    book = service.import_book(sample_txt)
+    cached = ctx.layout(book.id).root / "book.json"
+    stale = read_json(cached)
+    stale["parser_version"] = 0
+    stale["chapters"] = stale["chapters"][:1]
+    write_json(cached, stale)
+    parsed = service.load_parsed(book.id)
+    assert len(parsed.chapters) == 2
+    assert service.import_book(sample_txt).id == book.id

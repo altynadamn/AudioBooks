@@ -27,6 +27,7 @@ class ParsedBook(BaseModel):
     author: str = ""
     language: str = ""
     source_format: str
+    parser_version: int = 0
     chapters: list[ParsedChapter]
     warnings: list[str] = Field(default_factory=list)
 

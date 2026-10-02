@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from abc import ABC, abstractmethod
-from itertools import pairwise
 from pathlib import Path
 
 from audiobooks.models.book import ParsedBook, ParsedChapter
@@ -24,6 +23,16 @@ _HEADING_RE = re.compile(
     )\s*$""",
     re.IGNORECASE | re.VERBOSE,
 )
+
+_MAJOR_RE = re.compile(
+    r"^\s*(?:часть|книга|part|book|пролог|эпилог|предисловие|послесловие|prologue|epilogue"
+    r"|preface|afterword)\b",
+    re.IGNORECASE,
+)
+_NUMBER_ONLY = re.compile(r"^\s*(\d{1,3}|[ivxlcdm]{1,7})\.?\s*$", re.IGNORECASE)
+
+# Bump when parsing output changes; books parsed by an older version are re-parsed.
+PARSER_VERSION = 2
 
 MAX_HEADING_LEN = 90
 FALLBACK_CHAPTER_CHARS = 20_000
@@ -45,30 +54,43 @@ def split_into_chapters(
 ) -> list[ParsedChapter]:
     """Detect chapter headings in a flat paragraph list.
 
-    Falls back to size-based pseudo-chapters (split on paragraph boundaries) when the text
-    has no recognizable headings, so huge unstructured files still get processed in
+    Part-level headings ("Часть 1", "Book II", "Эпилог") prefix the chapters inside them,
+    and bare numbers under a part become "Часть 1. Глава 3" / "Part 1. Chapter 3". Falls
+    back to size-based pseudo-chapters (split on paragraph boundaries) when the text has
+    no recognizable headings, so huge unstructured files still get processed in
     resumable pieces.
     """
     paragraphs = [p for p in (clean_paragraph(p) for p in paragraphs) if p]
-    heading_positions = [i for i, p in enumerate(paragraphs) if is_heading(p)]
-    heading_set = set(heading_positions)
+    if not any(is_heading(p) for p in paragraphs):
+        return split_by_size(paragraphs, default_title=default_title)
 
+    sample = " ".join(paragraphs[:200])
+    chapter_word = "Глава" if detect_language(sample) == "ru" else "Chapter"
     chapters: list[ParsedChapter] = []
-    if heading_positions:
-        preface = paragraphs[: heading_positions[0]]
-        if sum(len(p) for p in preface) > 200:
-            chapters.append(_chapter(1, "", preface, default_title))
-        bounds = [*heading_positions, len(paragraphs)]
-        for start, end in pairwise(bounds):
-            body = paragraphs[start + 1 : end]
-            if not body:
-                continue  # consecutive headings ("Часть 1" / "Глава 1"): keep the inner one
-            title = paragraphs[start]
-            if start - 1 in heading_set:
-                title = f"{paragraphs[start - 1]}. {title}"
-            chapters.append(_chapter(len(chapters) + 1, title, body, default_title))
-    if not chapters:
-        chapters = split_by_size(paragraphs, default_title=default_title)
+    major = ""
+    title = ""
+    body: list[str] = []
+
+    def emit() -> None:
+        if not body:
+            return
+        if not title and sum(len(p) for p in body) <= 200:
+            return  # tiny front matter before the first heading (title page)
+        chapters.append(_chapter(len(chapters) + 1, title, list(body), default_title))
+
+    for p in paragraphs:
+        if not is_heading(p):
+            body.append(p)
+            continue
+        emit()
+        body = []
+        if _MAJOR_RE.match(p):
+            major = title = p
+        else:
+            number = _NUMBER_ONLY.match(p)
+            name = f"{chapter_word} {number.group(1)}" if number else p
+            title = f"{major}. {name}" if major else name
+    emit()
     return chapters
 
 
@@ -148,6 +170,7 @@ class BookParser(ABC):
             author=author.strip(),
             language=language or detect_language(text_sample),
             source_format=self.extensions[0].lstrip("."),
+            parser_version=PARSER_VERSION,
             chapters=chapters,
             warnings=warnings,
         )

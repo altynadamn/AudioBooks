@@ -114,6 +114,10 @@ class Database:
                            char_count=excluded.char_count""",
                     (book.id, ch.index, ch.title, ch.char_count),
                 )
+            # a re-parse may produce fewer chapters
+            conn.execute(
+                "DELETE FROM chapters WHERE book_id = ? AND idx > ?", (book.id, len(chapters))
+            )
 
     def get_book(self, book_id: str) -> Book:
         with self._connect() as conn:
@@ -201,6 +205,18 @@ class Database:
         assignments = ", ".join(f"{name} = ?" for name in fields)
         with self._connect() as conn:
             conn.execute(f"UPDATE jobs SET {assignments} WHERE id = ?", (*fields.values(), job_id))
+
+    def mark_interrupted_jobs(self) -> int:
+        """Jobs left 'running'/'pending' by a stopped process become resumable failures."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE jobs SET status = ?, error = ?, updated_at = ? WHERE status IN (?, ?)",
+                (
+                    JobStatus.FAILED, "interrupted (server restarted); resume to continue",
+                    _now().isoformat(), JobStatus.RUNNING, JobStatus.PENDING,
+                ),
+            )  # fmt: skip
+            return cur.rowcount
 
     def get_job(self, job_id: str) -> ProcessingJob:
         with self._connect() as conn:

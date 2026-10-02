@@ -264,6 +264,8 @@ def create_app(ctx: AppContext | None = None) -> FastAPI:
     app = FastAPI(title="AudioBooks", version=__version__, lifespan=lifespan)
     app.state.ctx = ctx
     app.state.runner = JobRunner(ctx)
+    if interrupted := ctx.db.mark_interrupted_jobs():
+        log.warning("%d interrupted job(s) marked as failed; they can be resumed", interrupted)
     app.include_router(router)
 
     @app.exception_handler(AudioBooksError)

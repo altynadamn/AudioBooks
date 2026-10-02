@@ -10,6 +10,7 @@ from pathlib import Path
 from audiobooks.errors import NotFoundError, UnsupportedFormatError
 from audiobooks.models.book import Book, Chapter, ParsedBook
 from audiobooks.parsers import SUPPORTED_EXTENSIONS, book_extension, get_parser
+from audiobooks.parsers.base import PARSER_VERSION
 from audiobooks.services.context import AppContext
 from audiobooks.utils import read_json, sanitize_filename, sha256_file, slugify, write_json
 from audiobooks.vision.base import PageTextExtractor
@@ -52,15 +53,18 @@ class BookService:
         path = validate_book_path(path)
         digest = sha256_file(path)
         existing = self.ctx.db.find_book_by_hash(digest)
-        if (
-            existing is not None
-            and self.ctx.layout(existing.id).root.joinpath("book.json").is_file()
-        ):
+        if existing is not None and self._parsed_version(existing.id) == PARSER_VERSION:
             log.info("book already imported as %s", existing.id)
             return existing
+        if existing is not None:
+            log.info("re-parsing %s with the current parser", existing.id)
 
         parsed = get_parser(path, ocr=self._ocr()).parse(path)
-        book_id = f"{slugify(parsed.title, max_len=40, fallback='book')}-{digest[:8]}"
+        book_id = (
+            existing.id
+            if existing is not None
+            else f"{slugify(parsed.title, max_len=40, fallback='book')}-{digest[:8]}"
+        )
         layout = self.ctx.layout(book_id)
         layout.source_dir.mkdir(parents=True, exist_ok=True)
         source_copy = layout.source_dir / sanitize_filename(path.name)
@@ -89,7 +93,18 @@ class BookService:
             log.warning("%s: %s", path.name, warning)
         return book
 
+    def _parsed_version(self, book_id: str) -> int | None:
+        path = self.ctx.layout(book_id).root / "book.json"
+        if not path.is_file():
+            return None
+        return int(read_json(path).get("parser_version", 0))
+
     def load_parsed(self, book_id: str) -> ParsedBook:
+        """Parsed text of a book; transparently re-parsed if an older parser produced it."""
+        if self._parsed_version(book_id) != PARSER_VERSION:
+            source = Path(self.ctx.db.get_book(book_id).source_path)
+            if source.is_file():
+                self.import_book(source)
         path = self.ctx.layout(book_id).root / "book.json"
         if not path.is_file():
             raise NotFoundError(f"parsed text for {book_id!r} is missing; re-import the book")
