@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +44,7 @@ class WorkItem:
     key: str
     model_tag: str
     path: Path
+    reuse_from: Path | None = None  # identical audio already rendered at another index
 
 
 class SynthesisService:
@@ -73,6 +75,12 @@ class SynthesisService:
         total = 0
         for script in scripts:
             manifest = self._load_manifest(layout, script.chapter)
+            # content-addressed lookup: inserting a paragraph shifts indices, not audio
+            by_key = {
+                e["key"]: layout.segment_file(script.chapter, int(i))
+                for i, e in manifest.items()
+                if isinstance(e, dict) and "key" in e
+            }
             for seg in script.segments:
                 total += 1
                 voice_id = resolve_voice(
@@ -89,12 +97,22 @@ class SynthesisService:
                 entry = manifest.get(str(seg.index))
                 if path.is_file() and entry and entry.get("key") == key:
                     continue
+                source = by_key.get(key)
                 pending.append(
                     WorkItem(
-                        script.chapter, seg.index, seg.text, voice, seg.emotion, key, tag, path
+                        script.chapter,
+                        seg.index,
+                        seg.text,
+                        voice,
+                        seg.emotion,
+                        key,
+                        tag,
+                        path,
+                        reuse_from=source if source is not None and source.is_file() else None,
                     )
                 )
-        pending.sort(key=lambda w: (w.model_tag, w.chapter, w.index))
+        # reused files first (copied before anything is overwritten), then by model
+        pending.sort(key=lambda w: (w.reuse_from is None, w.model_tag, w.chapter, w.index))
         return pending, total
 
     def run(
@@ -107,24 +125,37 @@ class SynthesisService:
         layout = self.ctx.layout(book.id)
         language = tts_language(self.ctx.settings.tts_language, book.language)
         manifests: dict[int, dict] = {}
+        # snapshot reusable audio before any segment file is overwritten
+        staged: dict[Path, Path] = {}
+        for item in items:
+            if item.reuse_from is not None:
+                tmp = item.path.with_suffix(".reuse.tmp")
+                shutil.copyfile(item.reuse_from, tmp)
+                staged[item.path] = tmp
         for n, item in enumerate(items, start=1):
-            clip = backend.synthesize(
-                SynthesisRequest(
-                    text=item.text,
-                    voice=item.voice,
-                    language=language,
-                    emotion=item.emotion,
-                    seed=int(item.key[:8], 16),
+            if item.path in staged:
+                os.replace(staged[item.path], item.path)
+                info = sf.info(str(item.path))
+                duration, rate = info.frames / info.samplerate, info.samplerate
+            else:
+                clip = backend.synthesize(
+                    SynthesisRequest(
+                        text=item.text,
+                        voice=item.voice,
+                        language=language,
+                        emotion=item.emotion,
+                        seed=int(item.key[:8], 16),
+                    )
                 )
-            )
-            _write_wav_atomic(item.path, clip.samples, clip.sample_rate)
+                _write_wav_atomic(item.path, clip.samples, clip.sample_rate)
+                duration, rate = clip.duration, clip.sample_rate
             manifest = manifests.setdefault(item.chapter, self._load_manifest(layout, item.chapter))
             manifest[str(item.index)] = {
                 "key": item.key,
                 "voice": item.voice.id,
                 "file": item.path.name,
-                "duration": round(clip.duration, 3),
-                "sample_rate": clip.sample_rate,
+                "duration": round(duration, 3),
+                "sample_rate": rate,
             }
             write_json(layout.segment_manifest(item.chapter), manifest)
             if on_segment:

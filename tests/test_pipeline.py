@@ -199,3 +199,27 @@ def test_unknown_chapter_is_rejected(ctx: AppContext, sample_txt: Path) -> None:
     book = BookService(ctx).import_book(sample_txt)
     with pytest.raises(AudioBooksError, match="do not exist"):
         Pipeline(ctx).run(_job(ctx, book.id, JobKind.ANALYZE, chapters=[9]))
+
+
+@needs_ffmpeg
+def test_inserted_paragraph_reuses_shifted_audio(
+    ctx: AppContext, tmp_path: Path, fake_tts: FakeTTSBackend
+) -> None:
+    from conftest import SAMPLE_RU
+
+    path = tmp_path / "book.txt"
+    path.write_text(SAMPLE_RU, encoding="utf-8")
+    book = BookService(ctx).import_book(path)
+    Pipeline(ctx).run(_job(ctx, book.id, JobKind.GENERATE, mode=GenerationMode.SIMPLE))
+    total = len(fake_tts.calls)
+
+    # simulate an edited source: one new paragraph at the start of chapter 1
+    parsed = BookService(ctx).load_parsed(book.id)
+    parsed.chapters[0].paragraphs.insert(0, "Новый первый абзац.")
+    from audiobooks.utils import write_json
+
+    write_json(ctx.layout(book.id).root / "book.json", parsed)
+    fake_tts.calls.clear()
+    Pipeline(ctx).run(_job(ctx, book.id, JobKind.GENERATE, mode=GenerationMode.SIMPLE))
+    assert [c.text for c in fake_tts.calls] == ["Новый первый абзац."]
+    assert total > 1

@@ -47,6 +47,8 @@ def _setup(verbose: bool = False) -> AppContext:
     )
     for noisy in ("httpx", "httpcore", "urllib3", "qwen_tts", "transformers", "huggingface_hub"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
+    # the `sox` package warns on import when the SoX binary is absent; Qwen3-TTS does not need it
+    logging.getLogger("sox").setLevel(logging.ERROR)
     return AppContext.from_settings(settings)
 
 

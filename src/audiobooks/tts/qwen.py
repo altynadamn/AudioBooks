@@ -71,6 +71,12 @@ class QwenTTSBackend:
                     "shared-memory spill.",
                     free / 1e9, total / 1e9,
                 )  # fmt: skip
+        try:  # silence per-call "Setting pad_token_id" notices from transformers
+            from transformers.utils import logging as hf_logging
+
+            hf_logging.set_verbosity_error()
+        except ImportError:
+            pass
         dtype = getattr(torch, self.settings.tts_dtype)
         log.info("loading TTS model %s on %s (%s)", model_id, device, self.settings.tts_dtype)
         try:
