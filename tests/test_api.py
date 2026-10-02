@@ -57,3 +57,12 @@ def test_unknown_ids_return_404(client: TestClient) -> None:
     assert client.get("/books/nope").status_code == 404
     assert client.get("/jobs/nope").status_code == 404
     assert client.put("/books/nope/characters/x/voice", json={"voice_id": "v"}).status_code == 404
+
+
+def test_web_ui_is_served(client: TestClient) -> None:
+    r = client.get("/")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert "AudioBooks" in r.text
+    # book text must never be injected as HTML
+    assert "innerHTML" not in r.text

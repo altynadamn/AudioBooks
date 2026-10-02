@@ -19,7 +19,7 @@ assembles chapters and an `.m4b`.
 3. [Hardware requirements](#hardware-requirements)
 4. [Setup on Windows](#setup-on-windows) – Python, CUDA/PyTorch, llama.cpp + Ornith,
    Qwen3-TTS, FFmpeg, `.env`
-5. [CLI usage](#cli-usage) · [API usage](#api-usage)
+5. [CLI usage](#cli-usage) · [Web interface](#web-interface) · [API usage](#api-usage)
 6. [Supported formats](#supported-book-formats) · [Voices](#voice-system) ·
    [Character Registry](#character-registry) · [SIMPLE vs AI CAST](#simple-vs-ai-cast)
 7. [Output structure](#output-structure) · [Testing](#testing) ·
@@ -46,9 +46,10 @@ Further documentation: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md),
 | Automatic llama-server start/stop around analysis (frees VRAM for TTS) | **implemented** (opt-in) |
 | CLI (`python -m audiobooks …`) | **implemented** |
 | Local REST API (FastAPI) | **implemented** (minimal) |
+| Web interface (upload, run jobs, progress, recast voices, listen, read scripts) | **implemented** (single page, minimal) |
 | Emotion-driven TTS style | **experimental** – stored always, sent only to models that accept instructions |
 | OCR of scanned PDF pages via Ornith + mmproj | **experimental** – interface and client implemented, not validated on real scans |
-| Web UI, batched TTS, standalone image input, workers on other machines | **planned** |
+| Batched TTS, standalone image input, workers on other machines, full web app | **planned** |
 
 ## Architecture
 
@@ -88,7 +89,7 @@ audiobooks/
     storage/    SQLite repository and deterministic output layout
     services/   import, analysis, synthesis, assembly, pipeline orchestration
     cli/        Typer + Rich command line
-    api/        FastAPI app
+    api/        FastAPI app + single-page web interface (api/static/index.html)
 ```
 
 Core services do not depend on the CLI or FastAPI, and heavy ML libraries are imported
@@ -279,6 +280,27 @@ python -m audiobooks analyze input\book.fb2        # terminal 2
 python -m audiobooks generate input\book.fb2       # reuses the analysis, only synthesizes
 ```
 
+## Web interface
+
+```powershell
+python -m audiobooks serve
+```
+
+Open <http://127.0.0.1:8000>. The page (served by the same FastAPI process, no Node.js
+or build step) lets you:
+
+* upload a book by drag & drop;
+* start *analysis only* or *generation* in SIMPLE or AI CAST mode, for all or selected
+  chapters, and watch stage/progress live;
+* resume a failed job;
+* see the Character Registry and change a character's voice from a dropdown (the voice is
+  pinned; the next generation re-renders only that character's lines);
+* play each chapter, read its structured script (who says what, with emotions), and
+  download the `.m4b`.
+
+Book text is always inserted as plain text (never as HTML). Like the API, the page is
+meant for localhost only.
+
 ## API usage
 
 `python -m audiobooks serve` starts FastAPI on `http://127.0.0.1:8000`
@@ -432,7 +454,7 @@ More in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
   validated; image files are not accepted as input yet.
 * **Editing the source** (or parser changes) re-analyzes the affected chapter; audio is
   reused by content, but the LLM may label it slightly differently.
-* The API has no authentication and a single in-process worker – localhost only.
+* The API and web page have no authentication and a single in-process worker – localhost only.
 * Tested on Windows 11 with an RTX 3050 6 GB only.
 
 ## Roadmap
@@ -442,5 +464,5 @@ More in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 * Whole-book speaker reconciliation pass; UI to review/merge `possibly_same_as` characters.
 * Emotion/style control with instruction-capable TTS models.
 * Validated OCR path for scanned PDFs and image input.
-* Web UI (Next.js) on top of the existing API; remote LLM/TTS workers.
+* A fuller web app (Next.js) on top of the existing API; remote LLM/TTS workers.
 * Pronunciation dictionary (stress marks for Russian names).

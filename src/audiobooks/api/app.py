@@ -10,10 +10,11 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from audiobooks import __version__
@@ -32,6 +33,9 @@ from audiobooks.utils import sanitize_filename
 from audiobooks.voices.registry import CharacterRegistry
 
 log = logging.getLogger(__name__)
+
+UI_FILE = Path(__file__).parent / "static" / "index.html"
+AUDIO_TYPES = {"m4a": "audio/mp4", "mp3": "audio/mpeg"}
 
 
 class AnalyzeRequest(BaseModel):
@@ -79,6 +83,12 @@ def _runner(request: Request) -> JobRunner:
 
 
 router = APIRouter()
+
+
+@router.get("/", include_in_schema=False)
+def ui() -> HTMLResponse:
+    """Minimal web interface (single static page over this API)."""
+    return HTMLResponse(UI_FILE.read_text(encoding="utf-8"))
 
 
 @router.get("/health")
@@ -208,7 +218,8 @@ def get_chapter_audio(request: Request, book_id: str, chapter: int) -> FileRespo
     path = ctx.layout(book_id).chapter_audio_file(chapter, ctx.settings.audio_format)
     if not path.is_file():
         raise NotFoundError(f"chapter {chapter} audio has not been generated yet")
-    return FileResponse(path, filename=path.name)
+    media_type = AUDIO_TYPES.get(ctx.settings.audio_format, "application/octet-stream")
+    return FileResponse(path, media_type=media_type, headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/books/{book_id}/audiobook")

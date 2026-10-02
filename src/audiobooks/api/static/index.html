@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AudioBooks</title>
+<style>
+:root {
+  --bg: #f6f5f2; --panel: #ffffff; --text: #1d1c1a; --muted: #6b6862; --line: #e4e1da;
+  --accent: #3b5bdb; --accent-text: #ffffff; --ok: #2b8a3e; --warn: #c27c0e; --err: #c92a2a;
+  --soft: #eef1fb; --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --text: #ecebe8; --muted: #a09d96; --line: #33322f;
+    --accent: #748ffc; --accent-text: #10131f; --ok: #69db7c; --warn: #ffc078; --err: #ff8787;
+    --soft: #262a3a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; align-items: baseline; gap: 16px; padding: 14px 20px;
+  border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 18px; margin: 0; }
+header .health { color: var(--muted); font-size: 13px; }
+.layout { display: grid; grid-template-columns: 280px 1fr; min-height: calc(100vh - 52px); }
+aside { border-right: 1px solid var(--line); padding: 16px; background: var(--panel); }
+main { padding: 20px; max-width: 1100px; width: 100%; }
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); }
+  main { padding: 16px; }
+}
+h2 { font-size: 15px; margin: 0 0 10px; }
+h3 { font-size: 14px; margin: 0 0 10px; color: var(--muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; }
+.drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 18px 12px;
+  text-align: center; color: var(--muted); cursor: pointer; margin-bottom: 16px; }
+.drop.over { border-color: var(--accent); background: var(--soft); color: var(--text); }
+.books { list-style: none; margin: 0; padding: 0; }
+.books li { padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.books li:hover { background: var(--soft); }
+.books li.active { background: var(--accent); color: var(--accent-text); }
+.books small { display: block; opacity: .75; font-size: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 16px; }
+.title { font-size: 22px; font-weight: 650; margin: 0; }
+.muted { color: var(--muted); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+label { display: inline-flex; gap: 6px; align-items: center; }
+select, input[type=text] { font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; }
+button, .button { font: inherit; border: 1px solid var(--line); background: var(--bg);
+  color: var(--text); padding: 7px 14px; border-radius: 7px; cursor: pointer;
+  text-decoration: none; display: inline-block; }
+button.primary, .button.primary { background: var(--accent); color: var(--accent-text);
+  border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+.progress { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.progress > div { height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+.status-done { color: var(--ok); } .status-failed { color: var(--err); }
+.status-running, .status-pending { color: var(--warn); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--line);
+  vertical-align: middle; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; }
+.table-wrap { overflow-x: auto; }
+audio { height: 32px; max-width: 260px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px;
+  font-weight: 600; white-space: nowrap; }
+.script { max-height: 420px; overflow: auto; padding: 8px 0; }
+.seg { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 4px 0; }
+.seg.narration .text { color: var(--muted); }
+.error { color: var(--err); white-space: pre-wrap; }
+.empty { color: var(--muted); padding: 40px 0; text-align: center; }
+.toast { position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 10px 14px;
+  border-radius: 8px; background: var(--err); color: #fff; display: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AudioBooks</h1>
+  <span class="health" id="health">подключение…</span>
+</header>
+<div class="layout">
+  <aside>
+    <div class="drop" id="drop">
+      Перетащите книгу сюда<br><small>или нажмите, чтобы выбрать (txt, fb2, epub, pdf)</small>
+      <input type="file" id="file" hidden accept=".txt,.fb2,.zip,.epub,.pdf">
+    </div>
+    <h2>Книги</h2>
+    <ul class="books" id="books"></ul>
+  </aside>
+  <main id="main"><div class="empty">Загрузите или выберите книгу слева.</div></main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const STAGES = { queued: "В очереди", analysis: "Анализ текста", casting: "Подбор голосов",
+  synthesis: "Озвучка", assembly: "Сборка глав", finished: "Готово" };
+const STATUSES = { pending: "ожидает", running: "выполняется", done: "готово", failed: "ошибка" };
+const GENDERS = { male: "муж.", female: "жен.", unknown: "?" };
+
+const state = { books: [], detail: null, characters: [], voices: [], pollTimer: null,
+  activeJob: null };
+
+// Element builder: every string becomes a text node, so book text is never parsed as HTML.
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === null || v === undefined || v === false) continue;
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (k in el && typeof v !== "string") el[k] = v;
+    else el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) {
+    if (c === null || c === undefined || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body.detail || JSON.stringify(body); } catch (_) {}
+    throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function toast(message) {
+  const t = document.getElementById("toast");
+  t.textContent = message;
+  t.style.display = "block";
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (t.style.display = "none"), 7000);
+}
+
+function speakerColor(id) {
+  if (id === "narrator") return "#d9d6cf";
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return `hsl(${hash % 360} 65% 75%)`;
+}
+
+function minutes(sec) { return sec ? `${(sec / 60).toFixed(1)} мин` : "—"; }
+
+// ---------------------------------------------------------------- data loading
+async function loadHealth() {
+  try {
+    const hl = await api("/health");
+    document.getElementById("health").textContent =
+      `v${hl.version} · голосов: ${hl.voices_available} · TTS: ${hl.tts_backend} · LLM: ${hl.llm_base_url}`;
+  } catch (e) {
+    document.getElementById("health").textContent = "сервер недоступен";
+  }
+}
+
+async function loadVoices() {
+  state.voices = (await api("/voices")).filter((v) => v.available);
+}
+
+async function loadBooks() {
+  state.books = await api("/books");
+  renderBooks();
+}
+
+async function selectBook(id) {
+  stopPolling();
+  location.hash = id;
+  state.detail = await api(`/books/${encodeURIComponent(id)}`);
+  state.characters = await api(`/books/${encodeURIComponent(id)}/characters`);
+  renderBooks();
+  renderBook();
+  const running = state.detail.jobs.find((j) => j.status === "running" || j.status === "pending");
+  if (running) startPolling(running.id);
+}
+
+async function refreshBook() {
+  if (state.detail) await selectBook(state.detail.book.id);
+}
+
+// ------------------------------------------------------------------- upload
+async function upload(file) {
+  const drop = document.getElementById("drop");
+  drop.textContent = `Загрузка: ${file.name}…`;
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    const book = await api("/books", { method: "POST", body: form });
+    await loadBooks();
+    await selectBook(book.id);
+  } catch (e) {
+    toast(`Не удалось загрузить: ${e.message}`);
+  } finally {
+    drop.replaceChildren("Перетащите книгу сюда", h("br"),
+      h("small", {}, "или нажмите, чтобы выбрать (txt, fb2, epub, pdf)"), fileInput);
+  }
+}
+
+const fileInput = document.getElementById("file");
+fileInput.addEventListener("change", () => fileInput.files[0] && upload(fileInput.files[0]));
+const dropZone = document.getElementById("drop");
+dropZone.addEventListener("click", (e) => { if (e.target !== fileInput) fileInput.click(); });
+dropZone.addEventListener("dragover", (e) => { e.preventDefault(); dropZone.classList.add("over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("over"));
+dropZone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  dropZone.classList.remove("over");
+  if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+});
+
+// --------------------------------------------------------------------- jobs
+function parseChapters(text) {
+  const result = [];
+  for (const part of text.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const m = part.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) for (let i = +m[1]; i <= +m[2]; i++) result.push(i);
+    else if (/^\d+$/.test(part)) result.push(+part);
+    else throw new Error(`Непонятный номер главы: ${part}`);
+  }
+  return result.length ? result : null;
+}
+
+async function startJob(kind) {
+  const id = state.detail.book.id;
+  try {
+    const chapters = parseChapters(document.getElementById("chapters").value);
+    const mode = document.getElementById("mode").value;
+    const body = kind === "analyze"
+      ? { chapters, heuristic: mode === "simple" }
+      : { chapters, mode, build_m4b: document.getElementById("m4b").checked };
+    const job = await api(`/books/${encodeURIComponent(id)}/${kind}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    startPolling(job.id);
+  } catch (e) {
+    toast(e.message);
+  }
+}
+
+async function resumeJob(jobId) {
+  try {
+    await api(`/jobs/${encodeURIComponent(jobId)}/resume`, { method: "POST" });
+    startPolling(jobId);
+  } catch (e) { toast(e.message); }
+}
+
+function startPolling(jobId) {
+  stopPolling();
+  state.activeJob = { id: jobId };
+  setButtonsDisabled(true);
+  const tick = async () => {
+    try {
+      const job = await api(`/jobs/${encodeURIComponent(jobId)}`);
+      state.activeJob = job;
+      renderJob(job);
+      if (job.status === "done" || job.status === "failed") {
+        stopPolling();
+        if (job.status === "failed") toast(`Задача завершилась ошибкой: ${job.error}`);
+        await refreshBook();
+      }
+    } catch (e) { toast(e.message); stopPolling(); }
+  };
+  tick();
+  state.pollTimer = setInterval(tick, 2000);
+}
+
+function stopPolling() {
+  if (state.pollTimer) clearInterval(state.pollTimer);
+  state.pollTimer = null;
+  state.activeJob = null;
+  setButtonsDisabled(false);
+}
+
+function setButtonsDisabled(disabled) {
+  document.querySelectorAll("[data-job-button]").forEach((b) => (b.disabled = disabled));
+}
+
+// ------------------------------------------------------------------- render
+function renderBooks() {
+  const list = document.getElementById("books");
+  const current = state.detail && state.detail.book.id;
+  list.replaceChildren(...state.books.map((b) =>
+    h("li", { class: b.id === current ? "active" : "", onclick: () => selectBook(b.id) },
+      b.title, h("small", {}, `${b.author || b.source_format} · глав: ${b.chapter_count}`))));
+  if (!state.books.length) list.append(h("li", { class: "muted" }, "пока пусто"));
+}
+
+function renderJob(job) {
+  const box = document.getElementById("job");
+  if (!box) return;
+  const pct = job.progress_total ? Math.round((100 * job.progress_done) / job.progress_total) : 0;
+  box.replaceChildren(
+    h("div", { class: "row" },
+      h("strong", {}, STAGES[job.stage] || job.stage),
+      h("span", { class: `status-${job.status}` }, STATUSES[job.status] || job.status),
+      h("span", { class: "muted" }, job.progress_total ? `${job.progress_done} / ${job.progress_total}` : ""),
+      h("span", { class: "muted" }, job.message || "")),
+    h("div", { class: "progress", style: "margin-top:8px" }, h("div", { style: `width:${pct}%` })),
+    job.error ? h("p", { class: "error" }, job.error) : null);
+}
+
+function renderBook() {
+  const { book, chapters, jobs, audiobook_ready } = state.detail;
+  const main = document.getElementById("main");
+  const enc = encodeURIComponent(book.id);
+
+  const header = h("div", { class: "card" },
+    h("p", { class: "title" }, book.title),
+    h("p", { class: "muted", style: "margin:4px 0 0" },
+      [book.author, book.source_format.toUpperCase(), book.language, `глав: ${book.chapter_count}`]
+        .filter(Boolean).join(" · ")),
+    audiobook_ready
+      ? h("p", { style: "margin:12px 0 0" },
+          h("a", { class: "button primary", href: `/books/${enc}/audiobook` }, "Скачать .m4b"))
+      : null);
+
+  const actions = h("div", { class: "card" },
+    h("h3", {}, "Генерация"),
+    h("div", { class: "row" },
+      h("label", {}, "Режим",
+        h("select", { id: "mode" },
+          h("option", { value: "cast" }, "AI CAST — голоса персонажей"),
+          h("option", { value: "simple" }, "SIMPLE — один рассказчик"))),
+      h("label", {}, "Главы",
+        h("input", { type: "text", id: "chapters", placeholder: "все (или 1,3,5-7)", size: 16 })),
+      h("label", {}, h("input", { type: "checkbox", id: "m4b", checked: true }), "собрать .m4b")),
+    h("div", { class: "row", style: "margin-top:12px" },
+      h("button", { "data-job-button": true, onclick: () => startJob("analyze") }, "Только анализ"),
+      h("button", { class: "primary", "data-job-button": true, onclick: () => startJob("generate") },
+        "Сгенерировать аудиокнигу")),
+    h("p", { class: "muted", style: "margin:10px 0 0;font-size:13px" },
+      "Задачи выполняются по одной. Готовые куски анализа и озвученные сегменты переиспользуются, " +
+      "поэтому прерванную задачу можно просто продолжить."),
+    h("div", { id: "job", style: "margin-top:12px" }));
+
+  const lastJobs = jobs.slice(0, 5);
+  const jobsCard = lastJobs.length ? h("div", { class: "card" },
+    h("h3", {}, "Последние задачи"),
+    h("div", { class: "table-wrap" }, h("table", {},
+      h("tr", {}, h("th", {}, "Задача"), h("th", {}, "Тип"), h("th", {}, "Режим"),
+        h("th", {}, "Статус"), h("th", {}, "Этап"), h("th", {}, "")),
+      lastJobs.map((j) => h("tr", {},
+        h("td", {}, h("code", {}, j.id)),
+        h("td", {}, j.kind === "analyze" ? "анализ" : "генерация"),
+        h("td", {}, j.options.mode),
+        h("td", { class: `status-${j.status}`, title: j.error || "" }, STATUSES[j.status] || j.status),
+        h("td", {}, STAGES[j.stage] || j.stage),
+        h("td", {}, j.status === "failed"
+          ? h("button", { "data-job-button": true, onclick: () => resumeJob(j.id) }, "Продолжить")
+          : null)))))) : null;
+
+  main.replaceChildren(header, actions, jobsCard, renderCharacters(book.id), renderChapters(book.id, chapters));
+  if (state.activeJob && state.activeJob.stage) renderJob(state.activeJob);
+  setButtonsDisabled(Boolean(state.pollTimer));
+}
+
+function renderCharacters(bookId) {
+  const card = h("div", { class: "card" }, h("h3", {}, "Персонажи и голоса"));
+  if (!state.characters.length) {
+    card.append(h("p", { class: "muted" },
+      "Персонажи появятся после анализа в режиме AI CAST."));
+    return card;
+  }
+  const voiceOptions = (current) => {
+    const opts = state.voices.map((v) => h("option", { value: v.id, selected: v.id === current },
+      `${v.name} (${GENDERS[v.gender] || v.gender})`));
+    if (current && !state.voices.some((v) => v.id === current)) {
+      opts.unshift(h("option", { value: current, selected: true }, `${current} (нет в библиотеке)`));
+    }
+    if (!current) opts.unshift(h("option", { value: "", selected: true }, "— не назначен —"));
+    return opts;
+  };
+  const rows = state.characters.map((c) => {
+    const select = h("select", {
+      onchange: async (e) => {
+        try {
+          await api(`/books/${encodeURIComponent(bookId)}/characters/${encodeURIComponent(c.id)}/voice`, {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voice_id: e.target.value }),
+          });
+          c.voice_id = e.target.value; c.voice_locked = true;
+          pin.textContent = "закреплён";
+        } catch (err) { toast(err.message); }
+      },
+    }, voiceOptions(c.voice_id));
+    const pin = h("span", { class: "muted", style: "font-size:12px" }, c.voice_locked ? "закреплён" : "");
+    return h("tr", {},
+      h("td", {}, h("span", { class: "badge", style: `background:${speakerColor(c.id)};color:#111` }, c.name)),
+      h("td", { class: "muted" }, c.aliases.join(", ")),
+      h("td", {}, GENDERS[c.gender] || c.gender),
+      h("td", {}, c.line_count),
+      h("td", {}, select, " ", pin),
+      h("td", { class: "muted", style: "font-size:13px" },
+        c.description, c.possibly_same_as.length ? ` (возможно то же лицо: ${c.possibly_same_as.join(", ")})` : ""));
+  });
+  card.append(h("div", { class: "table-wrap" }, h("table", {},
+    h("tr", {}, h("th", {}, "Имя"), h("th", {}, "Другие имена"), h("th", {}, "Пол"),
+      h("th", {}, "Реплик"), h("th", {}, "Голос"), h("th", {}, "Описание")),
+    rows)),
+    h("p", { class: "muted", style: "font-size:13px;margin:10px 0 0" },
+      "После смены голоса нажмите «Сгенерировать» — переозвучатся только реплики этого персонажа."));
+  return card;
+}
+
+function renderChapters(bookId, chapters) {
+  const enc = encodeURIComponent(bookId);
+  const card = h("div", { class: "card" }, h("h3", {}, "Главы"));
+  const rows = [];
+  for (const ch of chapters) {
+    const scriptRow = h("tr", { hidden: true }, h("td", { colspan: 5 }, h("div", { class: "script" })));
+    const toggle = h("button", {
+      disabled: ch.analysis_status !== "done",
+      onclick: async () => {
+        if (!scriptRow.hidden) { scriptRow.hidden = true; return; }
+        try {
+          const script = await api(`/books/${enc}/chapters/${ch.index}/script`);
+          scriptRow.querySelector(".script").replaceChildren(...script.segments.map((s) =>
+            h("div", { class: `seg ${s.type}` },
+              h("div", {}, h("span", { class: "badge", style: `background:${speakerColor(s.speaker)};color:#111` },
+                s.speaker === "narrator" ? "рассказчик" : s.speaker === "unknown" ? "неизвестно" : s.speaker)),
+              h("div", { class: "text" }, s.text,
+                s.emotion !== "neutral" ? h("span", { class: "muted", style: "font-size:12px" }, `  · ${s.emotion}`) : null))));
+          scriptRow.hidden = false;
+        } catch (e) { toast(e.message); }
+      },
+    }, "Текст");
+    const audio = ch.audio_path
+      ? h("audio", { controls: true, preload: "none",
+          src: `/books/${enc}/chapters/${ch.index}/audio?v=${ch.duration_sec}` })
+      : h("span", { class: "muted" }, "нет аудио");
+    rows.push(h("tr", {},
+      h("td", {}, ch.index),
+      h("td", {}, ch.title),
+      h("td", { class: `status-${ch.analysis_status === "done" ? "done" : ch.analysis_status === "failed" ? "failed" : ""}` },
+        ch.analysis_status === "done" ? (ch.analysis_method === "llm" ? "LLM" : "эвристика") : ch.analysis_status,
+        ch.error ? h("div", { class: "error", style: "font-size:12px" }, ch.error) : null),
+      h("td", {}, minutes(ch.duration_sec)),
+      h("td", {}, h("div", { class: "row" }, audio, toggle))), scriptRow);
+  }
+  card.append(h("div", { class: "table-wrap" }, h("table", {},
+    h("tr", {}, h("th", {}, "#"), h("th", {}, "Название"), h("th", {}, "Анализ"),
+      h("th", {}, "Длительность"), h("th", {}, "Аудио")), rows)));
+  return card;
+}
+
+// --------------------------------------------------------------------- boot
+(async () => {
+  loadHealth();
+  try {
+    await Promise.all([loadVoices(), loadBooks()]);
+    const fromHash = decodeURIComponent(location.hash.slice(1));
+    if (fromHash && state.books.some((b) => b.id === fromHash)) await selectBook(fromHash);
+    else if (state.books.length === 1) await selectBook(state.books[0].id);
+  } catch (e) { toast(e.message); }
+})();
+</script>
+</body>
+</html>

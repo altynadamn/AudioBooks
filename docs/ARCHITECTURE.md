@@ -49,7 +49,7 @@ flowchart LR
 | `audio` | FFmpeg command builders + runner | ffmpeg binary |
 | `storage` | SQLite repository, deterministic output layout | sqlite3 |
 | `services` | Use cases: import, analysis, synthesis, assembly, pipeline orchestration | everything above |
-| `cli`, `api` | Thin front ends over `services` | typer/rich, FastAPI |
+| `cli`, `api` | Thin front ends over `services`; `api/static/index.html` is a dependency-free web page over the API | typer/rich, FastAPI |
 
 Core services never import FastAPI or Typer. Heavy libraries (`torch`, `qwen_tts`) are
 imported lazily inside the TTS backend, so parsing, analysis and tests work without them.

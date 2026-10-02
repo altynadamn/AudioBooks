@@ -48,7 +48,7 @@ audiobooks = "audiobooks.cli.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-audiobooks = ["py.typed"]
+audiobooks = ["py.typed", "api/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
