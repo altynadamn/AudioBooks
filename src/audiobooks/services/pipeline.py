@@ -171,7 +171,11 @@ class Pipeline:
         speakers: list[str] = []
         for path in sorted(layout.script_dir.glob("chapter_*.json")):
             script = ChapterScript.model_validate(read_json(path))
-            speakers += [s.speaker for s in script.segments if s.type is SegmentType.DIALOGUE]
+            speakers += [
+                registry.canonical(s.speaker)
+                for s in script.segments
+                if s.type is SegmentType.DIALOGUE
+            ]
         registry.recount_lines(speakers)
         registry.save(layout.registry_file)
         return [scripts[ch.index] for ch in chapters]

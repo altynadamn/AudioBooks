@@ -69,3 +69,6 @@ class CharacterRegistryData(BaseModel):
 
     book_id: str
     characters: dict[str, Character] = Field(default_factory=dict)
+    merged: dict[str, str] = Field(
+        default_factory=dict, description="Ids merged into another character: old -> new."
+    )

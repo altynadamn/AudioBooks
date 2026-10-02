@@ -9,9 +9,11 @@ from __future__ import annotations
 import re
 
 from audiobooks.llm.schemas import (
+    CharacterCard,
     CharacterObservation,
     ChunkAnalysis,
     ChunkRequest,
+    PairVerdict,
     SpanLabel,
 )
 
@@ -19,9 +21,22 @@ from audiobooks.llm.schemas import (
 class FakeLLMProvider:
     name = "fake"
 
-    def __init__(self, characters: list[CharacterObservation] | None = None) -> None:
+    def __init__(
+        self,
+        characters: list[CharacterObservation] | None = None,
+        same: set[frozenset[str]] | None = None,
+    ) -> None:
         self.characters = characters or []
+        self.same = same or set()  # id pairs the fake considers the same person
         self.calls: list[ChunkRequest] = []
+        self.duplicate_checks: list[list[tuple[CharacterCard, CharacterCard]]] = []
+
+    def same_person(self, pairs: list[tuple[CharacterCard, CharacterCard]]) -> list[PairVerdict]:
+        self.duplicate_checks.append(pairs)
+        return [
+            PairVerdict(pair=n, same_person=frozenset({a.id, b.id}) in self.same)
+            for n, (a, b) in enumerate(pairs)
+        ]
 
     def health(self) -> bool:
         return True
@@ -51,5 +66,12 @@ class FakeLLMProvider:
                 labels.append(SpanLabel(id=span.id, type="dialogue", speaker=speaker))
             else:
                 labels.append(SpanLabel(id=span.id, type="narration", speaker="narrator"))
-        observed = [c for c in self.characters if c.id in seen]
+        # like a real model, report characters that speak or are mentioned in the chunk
+        text = " ".join(s.text for s in spans)
+        mentioned = {
+            c.id
+            for c in self.characters
+            if any(re.search(rf"{re.escape(n)}", text, re.IGNORECASE) for n in [c.name, *c.aliases])
+        }
+        observed = [c for c in self.characters if c.id in seen | mentioned]
         return ChunkAnalysis(characters=observed, segments=labels)

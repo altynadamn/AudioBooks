@@ -11,8 +11,22 @@ from audiobooks.config import Settings
 from audiobooks.errors import LLMResponseError
 from audiobooks.llm.client import OpenAICompatClient
 from audiobooks.llm.json_repair import JSONExtractionError, extract_json_object
-from audiobooks.llm.prompts import RETRY_PROMPT, SYSTEM_PROMPT, build_user_prompt
-from audiobooks.llm.schemas import CHUNK_ANALYSIS_JSON_SCHEMA, ChunkAnalysis, ChunkRequest
+from audiobooks.llm.prompts import (
+    DUPLICATE_SYSTEM_PROMPT,
+    RETRY_PROMPT,
+    SYSTEM_PROMPT,
+    build_duplicate_prompt,
+    build_user_prompt,
+)
+from audiobooks.llm.schemas import (
+    CHUNK_ANALYSIS_JSON_SCHEMA,
+    DUPLICATE_JSON_SCHEMA,
+    CharacterCard,
+    ChunkAnalysis,
+    ChunkRequest,
+    DuplicateAnswers,
+    PairVerdict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -96,3 +110,18 @@ class OpenAICompatibleProvider:
                     },
                 ]
         raise LLMResponseError(f"LLM failed to produce valid analysis: {last_error}")
+
+    def same_person(self, pairs: list[tuple[CharacterCard, CharacterCard]]) -> list[PairVerdict]:
+        if not pairs:
+            return []
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": DUPLICATE_SYSTEM_PROMPT},
+            {"role": "user", "content": build_duplicate_prompt(pairs)},
+        ]
+        schema = DUPLICATE_JSON_SCHEMA if self.settings.llama_json_schema else None
+        raw = self.client.chat(messages, temperature=0.0, max_tokens=4096, json_schema=schema)
+        try:
+            answers = DuplicateAnswers.model_validate(extract_json_object(raw)).answers
+        except (JSONExtractionError, ValidationError) as exc:
+            raise LLMResponseError(f"invalid duplicate-check response: {exc}") from exc
+        return [a for a in answers if 0 <= a.pair < len(pairs)]

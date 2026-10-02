@@ -87,7 +87,7 @@ retried.
 
 ### Speaker attribution
 
-Who speaks is decided in three layers:
+Who speaks is decided in four layers:
 
 1. **Prompt** (`llm/prompts.py`): the passage is shown one paragraph per line with its
    author's words, plus explicit rules – the speech tag in the same paragraph decides,
@@ -103,11 +103,24 @@ Who speaks is decided in three layers:
    speaker of every line in the paragraph. Inflected forms ("сказал он Ивану") do not
    match, so addressees are not mistaken for speakers.
 
-Measured on hand-labelled chapters of *Crime and Punishment* with Ornith 9B (IQ4_XS):
-the first prompt reached 76 % on chapter 1; the current pipeline gets 34/34 on chapter 1
-and 57/58 on chapter 2, which was not used while writing the rules (the remaining miss
-is a line Marmeladov quotes from someone else). Analysis is ~25 % slower than before
-because of the `cue` field.
+4. **Cast consolidation** (after each chapter): candidate pairs of entries are chosen
+   deterministically (shared description keywords, `possibly_same_as`, at least one entry
+   first seen in this chapter) and the LLM answers "same person?" per pair, reason first.
+   This merges e.g. "Чиновник" (chapter 2, before he is named) into "Мармеладов"; merged
+   ids are redirected (`merged` map in the registry), so earlier scripts keep resolving.
+
+Measured on hand-labelled chapters of *Crime and Punishment* with Ornith 9B (IQ4_XS),
+chapters 1 and 2 analysed together (34 + 57 lines):
+
+| Version | Chapter 1 | Chapter 2 |
+|---|---|---|
+| first prompt (span list, no rules) | 76 % | – |
+| current pipeline, several runs | 97–100 % | 91–98 % |
+
+Chapter 2 was not used while writing the rules. Remaining misses are lines inside long
+monologues whose remark names no one ("продолжал оратор") and speech that a character
+quotes from someone else. Analysis is ~25 % slower than with the first prompt (the `cue`
+field), plus one short duplicate check per chapter (~15 s).
 
 Character names are cleaned too: names that mix Cyrillic and Latin ("Родion") are
 repaired from words of the source text, and a full name merges with an entry that holds

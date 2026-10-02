@@ -110,3 +110,15 @@ def test_tag_restores_dialogue_mislabeled_as_narration() -> None:
     apply_speech_tags(segments, registry(), hints)
     assert (segments[0].type, segments[0].speaker) == ("dialogue", "host")
     assert segments[1].speaker == "narrator"
+
+
+def test_reused_id_with_foreign_name_in_aliases_is_not_merged() -> None:
+    reg = registry()
+    cid = reg.observe(
+        CharacterObservation(
+            id="alena", name="Хозяйка", aliases=["Амалия Федоровна"], gender="female"
+        ),
+        chapter=2,
+    )
+    assert cid != "alena"
+    assert "Амалия Федоровна" not in reg.get("alena").aliases

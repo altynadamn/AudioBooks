@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from audiobooks.llm.schemas import ChunkRequest
+from audiobooks.llm.schemas import CharacterCard, ChunkRequest
 
 PROMPT_VERSION = "chunk-v2"  # bump to invalidate cached chunk analyses
 
@@ -106,3 +106,24 @@ def build_user_prompt(request: ChunkRequest) -> str:
     if paragraph:
         lines.append(" ".join(paragraph))
     return "\n".join(lines)
+
+
+DUPLICATE_SYSTEM_PROMPT = """\
+You check an audiobook cast list for duplicates, so that every person gets exactly one \
+voice. Each question shows two entries extracted from different parts of a novel. Decide \
+whether they are the SAME person (for example, first introduced by a description such as \
+"чиновник" or "старуха" and later by name). Compare age, occupation, family relations and \
+situation in the descriptions. Relatives often share a surname but are different people.
+Respond with JSON: {"answers": [{"pair": 0, "reason": "...", "same_person": true}, ...]} \
+with exactly one answer per pair."""
+
+
+def _card(c: CharacterCard) -> str:
+    aliases = f" (aliases: {', '.join(c.aliases[:5])})" if c.aliases else ""
+    return f"{c.name}{aliases}, {c.gender}: {c.description}"
+
+
+def build_duplicate_prompt(pairs: list[tuple[CharacterCard, CharacterCard]]) -> str:
+    return "\n".join(
+        f"Pair {n}:\n  A: {_card(a)}\n  B: {_card(b)}" for n, (a, b) in enumerate(pairs)
+    )

@@ -142,3 +142,26 @@ def test_resolve_voice_modes() -> None:
         resolve_voice(unknown, mode=GenerationMode.CAST, unknown_voice_id="male_01", **kw)
         == "male_01"
     )
+
+
+def test_merge_redirects_old_ids_and_keeps_pinned_voice() -> None:
+    reg = new_registry()
+    reg.observe(obs(id="official", name="Чиновник", gender="male"), 2)
+    reg.observe(obs(id="marmeladov", name="Мармеладов", gender="male"), 2)
+    reg.get("official").voice_id, reg.get("official").voice_locked = "male_02", True
+    reg.get("official").line_count, reg.get("marmeladov").line_count = 3, 5
+    assert reg.merge("marmeladov", "official")
+    assert "official" not in reg.characters
+    assert reg.canonical("official") == "marmeladov"
+    assert reg.get("official").id == "marmeladov"  # old scripts still resolve
+    m = reg.get("marmeladov")
+    assert "Чиновник" in m.aliases and m.line_count == 8
+    assert (m.voice_id, m.voice_locked) == ("male_02", True)
+
+
+def test_merge_refuses_contradictions() -> None:
+    reg = new_registry()
+    reg.observe(obs(id="sasha_f", name="Саша", gender="female"), 1)
+    reg.observe(obs(id="petr", name="Пётр", gender="male"), 1)
+    assert not reg.merge("sasha_f", "petr")
+    assert not reg.merge("petr", "missing")

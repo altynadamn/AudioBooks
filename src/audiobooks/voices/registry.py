@@ -13,7 +13,7 @@ import logging
 import re
 from pathlib import Path
 
-from audiobooks.llm.schemas import CharacterObservation, KnownCharacter
+from audiobooks.llm.schemas import CharacterCard, CharacterObservation, KnownCharacter
 from audiobooks.models.character import AgeGroup, Character, CharacterRegistryData, Gender
 from audiobooks.models.script import NARRATOR, UNKNOWN_SPEAKER
 from audiobooks.utils import read_json, slugify, write_json
@@ -115,8 +115,95 @@ class CharacterRegistry:
     def characters(self) -> dict[str, Character]:
         return self.data.characters
 
+    def canonical(self, char_id: str) -> str:
+        """Follow merges: an id merged into another character resolves to the survivor."""
+        seen: set[str] = set()
+        while char_id in self.data.merged and char_id not in seen:
+            seen.add(char_id)
+            char_id = self.data.merged[char_id]
+        return char_id
+
     def get(self, char_id: str) -> Character | None:
-        return self.data.characters.get(char_id)
+        return self.data.characters.get(self.canonical(char_id))
+
+    def cards(self, ids: list[str]) -> list[CharacterCard]:
+        return [
+            CharacterCard(
+                id=c.id, name=c.name, aliases=c.aliases[:6], gender=c.gender.value,
+                description=c.description[:200], first_chapter=c.first_chapter,
+                line_count=c.line_count, possibly_same_as=c.possibly_same_as,
+            )
+            for i in ids
+            if (c := self.data.characters.get(i)) is not None
+        ]  # fmt: skip
+
+    def duplicate_candidates(
+        self, new_ids: list[str], limit: int = 25
+    ) -> list[tuple[Character, Character]]:
+        """Pairs worth asking the LLM about: at least one entry is new, genders do not
+        contradict, and the entries share description keywords or are linked as
+        ``possibly_same_as``."""
+        new = set(new_ids)
+        scored: list[tuple[int, Character, Character]] = []
+        chars = list(self.data.characters.values())
+        for n, a in enumerate(chars):
+            for b in chars[n + 1 :]:
+                if a.id not in new and b.id not in new:
+                    continue
+                if Gender.UNKNOWN not in (a.gender, b.gender) and a.gender != b.gender:
+                    continue
+                linked = b.id in a.possibly_same_as or a.id in b.possibly_same_as
+                common = len(_stems(a) & _stems(b))
+                if linked or common >= 2:
+                    scored.append((common + (10 if linked else 0), a, b))
+        scored.sort(key=lambda t: -t[0])
+        return [(a, b) for _, a, b in scored[:limit]]
+
+    @staticmethod
+    def keeper(a: Character, b: Character) -> tuple[Character, Character]:
+        """Which entry survives a merge: a proper name beats a description, then the
+        one with more lines, then the earlier one."""
+
+        def rank(c: Character) -> tuple[int, int, int]:
+            return (int(_looks_like_name(c.name)), c.line_count, -(c.first_chapter or 0))
+
+        return (a, b) if rank(a) >= rank(b) else (b, a)
+
+    def merge(self, keep_id: str, other_id: str) -> bool:
+        """Merge ``other`` into ``keep``. Refuses contradictory merges; returns success."""
+        keep, other = self.data.characters.get(keep_id), self.data.characters.get(other_id)
+        if keep is None or other is None or keep_id == other_id:
+            return False
+        if Gender.UNKNOWN not in (keep.gender, other.gender) and keep.gender != other.gender:
+            log.warning("refusing to merge %s into %s: genders differ", other_id, keep_id)
+            return False
+        if keep.voice_locked and other.voice_locked and keep.voice_id != other.voice_id:
+            log.warning("refusing to merge %s into %s: both voices pinned", other_id, keep_id)
+            return False
+        names = {normalize_name(n) for n in keep.all_names()}
+        for name in other.all_names():
+            if normalize_name(name) not in names and not mixed_script(name):
+                keep.aliases.append(name)
+                names.add(normalize_name(name))
+        if keep.gender is Gender.UNKNOWN:
+            keep.gender = other.gender
+        if keep.age_group is AgeGroup.UNKNOWN:
+            keep.age_group = other.age_group
+        keep.description = keep.description or other.description
+        keep.line_count += other.line_count
+        firsts = [c for c in (keep.first_chapter, other.first_chapter) if c]
+        keep.first_chapter = min(firsts) if firsts else 0
+        if other.voice_locked and not keep.voice_locked:
+            keep.voice_id, keep.voice_locked = other.voice_id, True
+        elif not keep.voice_id:
+            keep.voice_id = other.voice_id
+        del self.data.characters[other_id]
+        self.data.merged[other_id] = keep_id
+        for c in self.data.characters.values():
+            ids = [keep_id if i == other_id else i for i in c.possibly_same_as]
+            c.possibly_same_as = [i for i in dict.fromkeys(ids) if i != c.id]
+        log.info("merged character %s into %s", other_id, keep_id)
+        return True
 
     def find_by_name(self, name: str) -> list[Character]:
         key = normalize_name(name)
@@ -138,9 +225,9 @@ class CharacterRegistry:
             return lowered
         slug = slugify(raw, fallback="")
         if chunk_ids and slug in chunk_ids:
-            return chunk_ids[slug]
-        if slug in self.data.characters:
-            return slug
+            return self.canonical(chunk_ids[slug])
+        if self.canonical(slug) in self.data.characters:
+            return self.canonical(slug)
         matches = self.find_by_name(raw)
         if len(matches) == 1:
             return matches[0].id
@@ -203,7 +290,7 @@ class CharacterRegistry:
 
     def count_lines(self, speakers: list[str]) -> None:
         for sid in speakers:
-            if (c := self.data.characters.get(sid)) is not None:
+            if (c := self.get(sid)) is not None:
                 c.line_count += 1
 
     def _match(self, obs: CharacterObservation) -> Character | None:
@@ -277,6 +364,20 @@ class CharacterRegistry:
         return candidate
 
 
+_SURNAME = re.compile(r"(ов|ев|ёв|ин|ын|ский|цкий|ова|ева|ина|ына|ская|цкая)$")
+
+
+def _looks_like_name(name: str) -> bool:
+    """ "Мармеладов", "Алена Ивановна" look like names; "Чиновник", "Старуха" do not."""
+    tokens = normalize_name(name).split()
+    return len(tokens) >= 2 or any(_SURNAME.search(t) for t in tokens)
+
+
+def _stems(c: Character) -> set[str]:
+    text = " ".join([c.description, *c.all_names()]).lower()
+    return {w[:5] for w in re.findall(r"[а-яёa-z]{5,}", text)}
+
+
 def _is_upgrade(current: str, obs: CharacterObservation) -> bool:
     """The observation carries a real name for an entry that holds only a description."""
     cur, new = name_tokens(current), name_tokens(obs.name)
@@ -287,13 +388,18 @@ def _is_upgrade(current: str, obs: CharacterObservation) -> bool:
 
 
 def _related(obs: CharacterObservation, known: Character) -> bool:
-    """False only for two different multi-word names ("Алена Ивановна" vs "Пульхерия
-    Александровна"). A one-word name is often a description ("Старушка") that the model
-    later replaces with the real name, so it is considered related."""
-    if len(name_tokens(obs.name)) < 2 or len(name_tokens(known.name)) < 2:
+    """Could ``obs`` (which reuses ``known``'s id) be the same person?
+
+    False when both carry real names (in name or aliases) that share no word: "Алена
+    Ивановна" vs "Пульхерия Александровна", or an observation named "Хозяйка" whose aliases
+    say "Амалия Федоровна". Descriptions ("Старушка", "Чиновник") are always compatible,
+    because the model often replaces them with the real name later."""
+    obs_names = [n for n in [obs.name, *obs.aliases] if _looks_like_name(n)]
+    known_names = [n for n in known.all_names() if _looks_like_name(n)]
+    if not obs_names or not known_names:
         return True
-    obs_words = {t for n in [obs.name, *obs.aliases] for t in name_tokens(n)}
-    known_words = {t for n in known.all_names() for t in name_tokens(n)}
+    obs_words = {t for n in obs_names for t in name_tokens(n)}
+    known_words = {t for n in known_names for t in name_tokens(n)}
     return any(len(t) >= 3 and not _PATRONYMIC.search(t) for t in obs_words & known_words)
 
 

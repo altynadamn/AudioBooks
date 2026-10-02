@@ -132,6 +132,50 @@ class ChunkRequest:
     recent_speakers: list[str] = field(default_factory=list)
 
 
+class PairVerdict(BaseModel):
+    pair: int
+    reason: str = ""
+    same_person: bool
+
+
+class DuplicateAnswers(BaseModel):
+    answers: list[PairVerdict] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CharacterCard:
+    """Character summary shown to the LLM when consolidating the cast."""
+
+    id: str
+    name: str
+    aliases: list[str]
+    gender: str
+    description: str
+    first_chapter: int
+    line_count: int
+    possibly_same_as: list[str]
+
+
+DUPLICATE_JSON_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "answers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "pair": {"type": "integer"},
+                    "reason": {"type": "string"},  # before the verdict: evidence first
+                    "same_person": {"type": "boolean"},
+                },
+                "required": ["pair", "reason", "same_person"],
+            },
+        }
+    },
+    "required": ["answers"],
+}
+
+
 # Hand-written JSON schema (no $refs) for llama-server's grammar-constrained decoding.
 CHUNK_ANALYSIS_JSON_SCHEMA: dict = {
     "type": "object",

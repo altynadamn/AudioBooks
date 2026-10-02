@@ -235,3 +235,41 @@ def test_reanalyzed_chapter_does_not_double_count_lines(ctx: AppContext, sample_
     layout.script_file(1).unlink()
     Pipeline(ctx).run(_job(ctx, book.id, JobKind.ANALYZE, mode=GenerationMode.CAST))
     assert CharacterRegistry.load(layout.registry_file, book.id).get("anna").line_count == 2
+
+
+def test_chapter_consolidation_merges_description_into_name(fake_llm: FakeLLMProvider) -> None:
+    from datetime import UTC, datetime
+
+    from audiobooks.llm.schemas import CharacterObservation
+    from audiobooks.models.book import Book
+    from audiobooks.models.character import CharacterRegistryData
+    from audiobooks.models.script import AudiobookSegment
+    from audiobooks.services.analysis import AnalysisService
+
+    def observe(cid: str, name: str, desc: str, chapter: int) -> None:
+        registry.observe(
+            CharacterObservation(id=cid, name=name, gender="male", description=desc), chapter
+        )
+
+    registry = CharacterRegistry(CharacterRegistryData(book_id="b"))
+    observe("innkeeper", "Хозяин", "хозяин распивочной, отставной солдат", 1)
+    observe("porter", "Дворник", "дворник дома, отставной солдат", 1)
+    observe("official", "Чиновник", "отставной чиновник, пьяный, говорит витиевато", 2)
+    observe("marmeladov", "Мармеладов", "отставной титулярный советник, бывший чиновник", 2)
+    segments = [AudiobookSegment(index=0, type="dialogue", speaker="official", text="Ну-с.")]
+    fake_llm.same = {
+        frozenset({"official", "marmeladov"}),
+        frozenset({"innkeeper", "porter"}),  # settled in chapter 1: never even asked
+    }
+    book = Book(id="b", title="T", source_format="txt", source_path="x", source_sha256="x",
+                chapter_count=2, created_at=datetime.now(UTC))  # fmt: skip
+    AnalysisService._consolidate(book, 2, segments, registry, fake_llm)
+
+    asked = {frozenset({a.id, b.id}) for a, b in fake_llm.duplicate_checks[0]}
+    assert frozenset({"official", "marmeladov"}) in asked
+    assert frozenset({"innkeeper", "porter"}) not in asked
+    # the proper name survives, the description becomes an alias
+    assert registry.canonical("official") == "marmeladov"
+    assert "Чиновник" in registry.get("marmeladov").aliases
+    assert {"innkeeper", "porter"} <= set(registry.characters)
+    assert segments[0].speaker == "marmeladov"

@@ -95,6 +95,8 @@ class AnalysisService:
             segments = self._llm_segments(
                 book, chapter, spans, paragraphs, registry, llm, layout, on_chunk
             )
+            self._consolidate(book, chapter.index, segments, registry, llm)
+            registry.save(layout.registry_file)
         script = ChapterScript(
             book_id=book.id,
             chapter=chapter.index,
@@ -107,6 +109,45 @@ class AnalysisService:
         return script
 
     # ------------------------------------------------------------------ llm path
+    @staticmethod
+    def _consolidate(
+        book: Book,
+        chapter: int,
+        segments: list[AudiobookSegment],
+        registry: CharacterRegistry,
+        llm: LLMProvider,
+    ) -> None:
+        """Merge duplicate cast entries (description first, name later).
+
+        Candidate pairs are chosen deterministically (shared description keywords,
+        ``possibly_same_as``); the LLM only answers "same person?" per pair. At least one
+        entry of every pair was first seen in this chapter, so settled characters of
+        earlier chapters are never merged with each other.
+        """
+        new_ids = [c.id for c in registry.characters.values() if c.first_chapter == chapter]
+        pairs = registry.duplicate_candidates(new_ids) if new_ids else []
+        if not pairs:
+            return
+        cards = [tuple(registry.cards([a.id, b.id])) for a, b in pairs]
+        try:
+            verdicts = llm.same_person(cards)  # type: ignore[arg-type]
+        except LLMError as exc:
+            log.warning("chapter %d: duplicate check skipped: %s", chapter, exc)
+            return
+        for v in verdicts:
+            if not v.same_person:
+                continue
+            a, b = pairs[v.pair]
+            a, b = registry.get(a.id), registry.get(b.id)  # may already be merged
+            if a is None or b is None or a.id == b.id:
+                continue
+            keep, other = registry.keeper(a, b)
+            if registry.merge(keep.id, other.id):
+                log.info("chapter %d: %s is %s (%s)", chapter, other.id, keep.id, v.reason[:80])
+        for seg in segments:
+            if seg.type is SegmentType.DIALOGUE:
+                seg.speaker = registry.canonical(seg.speaker)
+
     def _llm_segments(
         self,
         book: Book,
