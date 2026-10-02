@@ -1,0 +1,14 @@
+{
+  "id": "narrator_01",
+  "name": "Narrator 01",
+  "source": "reference",
+  "gender": "unknown",
+  "age_group": "adult",
+  "style": ["calm", "literary"],
+  "languages": ["ru"],
+  "roles": ["narrator", "character"],
+  "reference_audio": "references/narrator_01.wav",
+  "reference_text": "Здесь было трудно кого-нибудь удивить. Близость с сенной, обилие известных заведений и по преимуществу цеховое и ремесленное население, скученное в этих серединных петербургских улицах и переулках.",
+  "license": "Local recording supplied by the user; the audio file is not distributed with this repository.",
+  "notes": "Place a ~10-20 s clean mono recording at voices/references/narrator_01.wav whose transcript matches reference_text exactly."
+}
