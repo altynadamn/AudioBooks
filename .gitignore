@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local configuration / secrets
+.env
+.env.*
+!.env.example
+
+# Tool caches
+.cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Model weights and caches (never commit)
+/models/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+hf_cache/
+
+# Local data: input books, generated output, application state
+/input/
+/output/
+/data/
+/work/
+*.sqlite3
+*.db
+
+# Generated / local audio (voice reference recordings are added locally, see voices/README.md)
+*.wav
+*.mp3
+*.m4a
+*.m4b
+*.flac
+*.ogg
+
+# Temporary files
+/tmp/
+/temp/
+*.tmp
+*.log
+
+# IDE / OS junk
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
