@@ -52,7 +52,28 @@ class LlamaServerManager:
         self.log_dir = log_dir
         self.with_vision = with_vision
         self._proc: subprocess.Popen[bytes] | None = None
+        self._adopted_pid: int | None = None
         self._base = f"http://127.0.0.1:{settings.llama_server_port}"
+
+    @property
+    def pid_file(self) -> Path:
+        return self.log_dir / "llama-server.pid"
+
+    def _orphan_pid(self) -> int | None:
+        """PID of a llama-server we started earlier whose parent died (e.g. killed API)."""
+        try:
+            pid = int(self.pid_file.read_text().strip())
+        except (OSError, ValueError):
+            return None
+        try:
+            import psutil
+
+            proc = psutil.Process(pid)
+            if "llama-server" in proc.name().lower():
+                return pid
+        except Exception:  # no such process, access denied, psutil missing
+            return None
+        return None
 
     def is_healthy(self) -> bool:
         try:
@@ -62,7 +83,12 @@ class LlamaServerManager:
 
     def start(self) -> None:
         if self.is_healthy():
-            log.info("llama-server already running on %s; using it as-is", self._base)
+            orphan = self._orphan_pid()
+            if orphan is not None:
+                log.info("adopting llama-server (pid %s) left by a previous run", orphan)
+                self._adopted_pid = orphan
+            else:
+                log.info("llama-server already running on %s; using it as-is", self._base)
             return
         cmd = build_server_command(self.settings, with_vision=self.with_vision)
         self.log_dir.mkdir(parents=True, exist_ok=True)
@@ -73,6 +99,7 @@ class LlamaServerManager:
                 self._proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
             except OSError as exc:
                 raise LLMError(f"cannot start llama-server ({cmd[0]}): {exc}") from exc
+        self.pid_file.write_text(str(self._proc.pid))
 
         deadline = time.monotonic() + self.settings.llama_startup_timeout
         while time.monotonic() < deadline:
@@ -89,6 +116,18 @@ class LlamaServerManager:
         raise LLMError("llama-server did not become healthy in time")
 
     def stop(self) -> None:
+        if self._adopted_pid is not None:
+            log.info("stopping adopted llama-server (pid %s) to free VRAM", self._adopted_pid)
+            try:
+                import psutil
+
+                proc = psutil.Process(self._adopted_pid)
+                proc.terminate()
+                proc.wait(timeout=30)
+            except Exception as exc:
+                log.warning("could not stop llama-server pid %s: %s", self._adopted_pid, exc)
+            self._adopted_pid = None
+            self.pid_file.unlink(missing_ok=True)
         if self._proc is None:
             return
         log.info("stopping llama-server (pid %s) to free VRAM", self._proc.pid)
@@ -99,6 +138,7 @@ class LlamaServerManager:
             self._proc.kill()
             self._proc.wait(timeout=10)
         self._proc = None
+        self.pid_file.unlink(missing_ok=True)
 
     def __enter__(self) -> LlamaServerManager:
         self.start()
