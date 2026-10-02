@@ -29,12 +29,13 @@ from audiobooks.models.job import (
     JobStatus,
     ProcessingJob,
 )
-from audiobooks.models.script import ChapterScript
+from audiobooks.models.script import ChapterScript, SegmentType
 from audiobooks.services.analysis import HEURISTIC, LLM, AnalysisService
 from audiobooks.services.assembly import AssembledChapter, AssemblyService
 from audiobooks.services.books import BookService
 from audiobooks.services.context import AppContext
 from audiobooks.services.synthesis import SynthesisService
+from audiobooks.utils import read_json
 from audiobooks.voices.casting import VoiceCaster
 from audiobooks.voices.registry import CharacterRegistry
 
@@ -166,6 +167,12 @@ class Pipeline:
                     done += 1
                     db.update_job(job.id, progress_done=done)
                     self.reporter.advance(done, len(chapters), f"chapter {ch.index} analyzed")
+        # exact counts from every stored script (re-analyzed chapters must not count twice)
+        speakers: list[str] = []
+        for path in sorted(layout.script_dir.glob("chapter_*.json")):
+            script = ChapterScript.model_validate(read_json(path))
+            speakers += [s.speaker for s in script.segments if s.type is SegmentType.DIALOGUE]
+        registry.recount_lines(speakers)
         registry.save(layout.registry_file)
         return [scripts[ch.index] for ch in chapters]
 

@@ -126,6 +126,12 @@ class CharacterRegistry:
             log.info("new character %s (%s) may be the same as %s", new_id, obs.name, possibly)
         return new_id
 
+    def recount_lines(self, speakers: list[str]) -> None:
+        """Reset line counts from the full list of dialogue speakers of the book."""
+        for c in self.data.characters.values():
+            c.line_count = 0
+        self.count_lines(speakers)
+
     def count_lines(self, speakers: list[str]) -> None:
         for sid in speakers:
             if (c := self.data.characters.get(sid)) is not None:

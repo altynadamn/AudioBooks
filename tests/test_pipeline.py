@@ -223,3 +223,15 @@ def test_inserted_paragraph_reuses_shifted_audio(
     Pipeline(ctx).run(_job(ctx, book.id, JobKind.GENERATE, mode=GenerationMode.SIMPLE))
     assert [c.text for c in fake_tts.calls] == ["Новый первый абзац."]
     assert total > 1
+
+
+def test_reanalyzed_chapter_does_not_double_count_lines(ctx: AppContext, sample_txt: Path) -> None:
+    book = BookService(ctx).import_book(sample_txt)
+    Pipeline(ctx).run(_job(ctx, book.id, JobKind.ANALYZE, mode=GenerationMode.CAST))
+    layout = ctx.layout(book.id)
+    # force re-analysis of chapter 1 (e.g. after a parser change)
+    for cache in layout.analysis_dir(1).glob("*.json"):
+        cache.unlink()
+    layout.script_file(1).unlink()
+    Pipeline(ctx).run(_job(ctx, book.id, JobKind.ANALYZE, mode=GenerationMode.CAST))
+    assert CharacterRegistry.load(layout.registry_file, book.id).get("anna").line_count == 2
