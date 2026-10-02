@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     tts_device: str = "cuda:0"
     tts_dtype: Literal["bfloat16", "float16", "float32"] = "bfloat16"
     tts_language: str = "auto"
+    tts_builtin_voices: bool = Field(
+        default=True,
+        description="Allow casting built-in CustomVoice speakers (needs TTS_CUSTOM_VOICE_MODEL).",
+    )
     tts_use_instruct: bool = Field(
         default=False,
         description="Send emotion as an instruction to CustomVoice models that support it.",
