@@ -91,6 +91,7 @@ class ChapterScript(BaseModel):
     title: str
     analysis: str = Field(description="'llm' or 'heuristic'")
     source_hash: str = Field(default="", description="Hash of the chapter text + settings.")
+    prompt_version: str = Field(default="", description="LLM prompt version (llm scripts).")
     segments: list[AudiobookSegment]
 
     @property

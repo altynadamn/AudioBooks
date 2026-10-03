@@ -72,6 +72,10 @@ class AnalysisService:
             return None
         if method == LLM and script.analysis != LLM:
             return None
+        if script.analysis == LLM and script.prompt_version != PROMPT_VERSION:
+            # labelled by an older prompt: redo it (and don't reuse it for SIMPLE mode either,
+            # its speakers may not match the current registry)
+            return None
         return script
 
     def analyze_chapter(
@@ -103,6 +107,7 @@ class AnalysisService:
             title=chapter.title,
             analysis=method,
             source_hash=self.source_hash(chapter),
+            prompt_version=PROMPT_VERSION if method == LLM else "",
             segments=segments,
         )
         write_json(layout.script_file(chapter.index), script)

@@ -273,3 +273,20 @@ def test_chapter_consolidation_merges_description_into_name(fake_llm: FakeLLMPro
     assert "Чиновник" in registry.get("marmeladov").aliases
     assert {"innkeeper", "porter"} <= set(registry.characters)
     assert segments[0].speaker == "marmeladov"
+
+
+def test_scripts_from_an_older_prompt_are_reanalyzed(
+    ctx: AppContext, sample_txt: Path, fake_llm: FakeLLMProvider
+) -> None:
+    from audiobooks.utils import write_json
+
+    book = BookService(ctx).import_book(sample_txt)
+    Pipeline(ctx).run(_job(ctx, book.id, JobKind.ANALYZE, mode=GenerationMode.CAST))
+    path = ctx.layout(book.id).script_file(1)
+    script = ChapterScript.model_validate(read_json(path))
+    write_json(path, script.model_copy(update={"prompt_version": "chunk-v1"}))
+    for cache in ctx.layout(book.id).analysis_dir(1).glob("*.json"):
+        cache.unlink()
+    calls = len(fake_llm.calls)
+    Pipeline(ctx).run(_job(ctx, book.id, JobKind.ANALYZE, mode=GenerationMode.CAST))
+    assert len(fake_llm.calls) == calls + 1  # only chapter 1 was redone
